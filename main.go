@@ -11,69 +11,12 @@ import (
 	"github.com/joho/godotenv"
 )
 
-type weatherProvider interface {
-	temperature(city string) (float64, error) // in Kelvin, naturally
-}
+import weatherapps "github.com/rmbarboza/gofirstproject/weather_apps"
 
-type openWeatherMap struct {
-	apiKey string
-}
-
-type weatherUnderground struct {
-	apiKey string
-}
-
-type multiWeatherProvider []weatherProvider
+type multiWeatherProvider []weatherapps.WeatherProvider
 
 func hello(w http.ResponseWriter, r *http.Request) {
 	w.Write([]byte("hello!"))
-}
-
-// Method for open weather map
-func (w openWeatherMap) temperature(city string) (float64, error) {
-	resp, err := http.Get("http://api.openweathermap.org/data/2.5/weather?APPID=" + w.apiKey + "&q=" + city)
-	if err != nil {
-		return 0, err
-	}
-
-	defer resp.Body.Close()
-
-	var d struct {
-		Main struct {
-			Kelvin float64 `json:"temp"`
-		} `json:"main"`
-	}
-
-	if err := json.NewDecoder(resp.Body).Decode(&d); err != nil {
-		return 0, err
-	}
-
-	log.Printf("openWeatherMap: %s: %.2f", city, d.Main.Kelvin)
-	return d.Main.Kelvin, nil
-}
-
-// Method for weather underground
-func (w weatherUnderground) temperature(city string) (float64, error) {
-	resp, err := http.Get("http://api.wunderground.com/api/" + w.apiKey + "/conditions/q/" + city + ".json")
-	if err != nil {
-		return 0, err
-	}
-
-	defer resp.Body.Close()
-
-	var d struct {
-		Observation struct {
-			Celsius float64 `json:"temp_c"`
-		} `json:"current_observation"`
-	}
-
-	if err := json.NewDecoder(resp.Body).Decode(&d); err != nil {
-		return 0, err
-	}
-
-	kelvin := d.Observation.Celsius + 273.15
-	log.Printf("weatherUnderground: %s: %.2f", city, kelvin)
-	return kelvin, nil
 }
 
 func (w multiWeatherProvider) temperature(city string) (float64, error) {
@@ -85,8 +28,8 @@ func (w multiWeatherProvider) temperature(city string) (float64, error) {
 	// For each provider, spawn a goroutine with an anonymous function.
 	// That function will invoke the temperature method, and forward the response.
 	for _, provider := range w {
-		go func(p weatherProvider) {
-			k, err := p.temperature(city)
+		go func(p weatherapps.WeatherProvider) {
+			k, err := p.Temperature(city)
 			if err != nil {
 				errs <- err
 				return
@@ -124,8 +67,8 @@ func main() {
 	}
 
 	mw := multiWeatherProvider{
-		openWeatherMap{apiKey: openWeatherMapApiKey},
-		weatherUnderground{apiKey: "your-key-here"},
+		weatherapps.OpenWeatherMap{APIKey: openWeatherMapApiKey},
+		weatherapps.WeatherUnderground{APIKey: "your-key-here"},
 	}
 
 	http.HandleFunc("/hello", hello)
