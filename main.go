@@ -13,45 +13,8 @@ import (
 
 import weatherapps "github.com/rmbarboza/gofirstproject/weather_apps"
 
-type multiWeatherProvider []weatherapps.WeatherProvider
-
 func hello(w http.ResponseWriter, r *http.Request) {
 	w.Write([]byte("hello!"))
-}
-
-func (w multiWeatherProvider) temperature(city string) (float64, error) {
-	// Make a channel for temperatures, and a channel for errors.
-	// Each provider will push a value into only one.
-	temps := make(chan float64, len(w))
-	errs := make(chan error, len(w))
-
-	// For each provider, spawn a goroutine with an anonymous function.
-	// That function will invoke the temperature method, and forward the response.
-	for _, provider := range w {
-		go func(p weatherapps.WeatherProvider) {
-			k, err := p.Temperature(city)
-			if err != nil {
-				errs <- err
-				return
-			}
-			temps <- k
-		}(provider)
-	}
-
-	sum := 0.0
-
-	// Collect a temperature or an error from each provider.
-	for i := 0; i < len(w); i++ {
-		select {
-		case temp := <-temps:
-			sum += temp
-		case err := <-errs:
-			return 0, err
-		}
-	}
-
-	// Return the average, same as before.
-	return sum / float64(len(w)), nil
 }
 
 func main() {
@@ -66,7 +29,7 @@ func main() {
 		log.Fatal("OPEN_WEATHER_MAP_APPID is not set")
 	}
 
-	mw := multiWeatherProvider{
+	mw := weatherapps.MultiWeatherProvider{
 		weatherapps.OpenWeatherMap{APIKey: openWeatherMapApiKey},
 		weatherapps.WeatherUnderground{APIKey: "your-key-here"},
 	}
@@ -77,7 +40,7 @@ func main() {
 		begin := time.Now()
 		city := strings.SplitN(r.URL.Path, "/", 3)[2]
 
-		temp, err := mw.temperature(city)
+		temp, err := mw.Temperature(city)
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
