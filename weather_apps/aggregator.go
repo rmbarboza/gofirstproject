@@ -1,8 +1,14 @@
 package weatherapps
 
+import "errors"
+
 type MultiWeatherProvider []WeatherProvider
 
 func (w MultiWeatherProvider) Temperature(city string) (float64, error) {
+	if len(w) == 0 {
+		return 0, errors.New("empty provider list")
+	}
+
 	// Make a channel for temperatures, and a channel for errors.
 	// Each provider will push a value into only one.
 	temps := make(chan float64, len(w))
