@@ -9,21 +9,24 @@ func (w MultiWeatherProvider) Temperature(city string) (float64, error) {
 		return 0, errors.New("empty provider list")
 	}
 
-	// Make a channel for temperatures, and a channel for errors.
-	// Each provider will push a value into only one.
-	temps := make(chan float64, len(w))
-	errs := make(chan error, len(w))
+	type weatherResult struct {
+		temperature float64
+		err         error
+	}
+
+	// Make a channel for weatherResult.
+	// Each provider will push only one weatherResult.
+	results := make(chan weatherResult, len(w))
 
 	// For each provider, spawn a goroutine with an anonymous function.
 	// That function will invoke the temperature method, and forward the response.
 	for _, provider := range w {
 		go func(p WeatherProvider) {
-			k, err := p.Temperature(city)
-			if err != nil {
-				errs <- err
-				return
+			temp, err := p.Temperature(city)
+			results <- weatherResult{
+				temperature: temp,
+				err:         err,
 			}
-			temps <- k
 		}(provider)
 	}
 
@@ -31,12 +34,11 @@ func (w MultiWeatherProvider) Temperature(city string) (float64, error) {
 
 	// Collect a temperature or an error from each provider.
 	for i := 0; i < len(w); i++ {
-		select {
-		case temp := <-temps:
-			sum += temp
-		case err := <-errs:
-			return 0, err
+		res := <-results
+		if res.err != nil {
+			return 0, res.err
 		}
+		sum += res.temperature
 	}
 
 	// Return the average, same as before.
