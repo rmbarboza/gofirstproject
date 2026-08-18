@@ -1,10 +1,13 @@
 package weatherapps
 
-import "errors"
+import (
+	"context"
+	"errors"
+)
 
 type MultiWeatherProvider []WeatherProvider
 
-func (w MultiWeatherProvider) Temperature(city string) (float64, error) {
+func (w MultiWeatherProvider) Temperature(ctx context.Context, city string) (float64, error) {
 	if len(w) == 0 {
 		return 0, errors.New("empty provider list")
 	}
@@ -22,7 +25,7 @@ func (w MultiWeatherProvider) Temperature(city string) (float64, error) {
 	// That function will invoke the temperature method, and forward the response.
 	for _, provider := range w {
 		go func(p WeatherProvider) {
-			temp, err := p.Temperature(city)
+			temp, err := p.Temperature(ctx, city)
 			results <- weatherResult{
 				temperature: temp,
 				err:         err,
@@ -34,11 +37,15 @@ func (w MultiWeatherProvider) Temperature(city string) (float64, error) {
 
 	// Collect a temperature or an error from each provider.
 	for i := 0; i < len(w); i++ {
-		res := <-results
-		if res.err != nil {
-			return 0, res.err
+		select {
+		case res := <-results:
+			if res.err != nil {
+				return 0, res.err
+			}
+			sum += res.temperature
+		case <-ctx.Done():
+			return 0, ctx.Err()
 		}
-		sum += res.temperature
 	}
 
 	// Return the average, same as before.

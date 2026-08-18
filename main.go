@@ -40,7 +40,7 @@ func main() {
 		begin := time.Now()
 		city := strings.SplitN(r.URL.Path, "/", 3)[2]
 
-		temp, err := mw.Temperature(city)
+		temp, err := mw.Temperature(r.Context(), city)
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return

@@ -1,8 +1,10 @@
 package weatherapps
 
 import (
+	"context"
 	"errors"
 	"testing"
+	"time"
 )
 
 type fakeWeatherProvider struct {
@@ -10,20 +12,32 @@ type fakeWeatherProvider struct {
 	err         error
 }
 
-func (f fakeWeatherProvider) Temperature(_ string) (float64, error) {
+type blockingWeatherProvider struct {
+	release chan struct{}
+}
+
+func (f fakeWeatherProvider) Temperature(_ context.Context, _ string) (float64, error) {
 	return f.temperature, f.err
+}
+
+func (f blockingWeatherProvider) Temperature(_ context.Context, _ string) (float64, error) {
+	<-f.release
+
+	return 0, nil
 }
 
 func TestWeatherKelvinSuccess(t *testing.T) {
 	city := "tokyo"
 	want := 305.0
 
+	ctx := context.Background()
+
 	mw := MultiWeatherProvider{
 		fakeWeatherProvider{temperature: 300},
 		fakeWeatherProvider{temperature: 310},
 	}
 
-	temp, err := mw.Temperature(city)
+	temp, err := mw.Temperature(ctx, city)
 
 	if err != nil {
 		t.Fatalf("Temperature() returned error: %v", err)
@@ -39,12 +53,14 @@ func TestWeatherKelvinReturnsErrorWhenProviderFails(t *testing.T) {
 	want := 0.0
 	expectedErr := errors.New("provider unavailable")
 
+	ctx := context.Background()
+
 	mw := MultiWeatherProvider{
 		fakeWeatherProvider{temperature: 300},
 		fakeWeatherProvider{err: expectedErr},
 	}
 
-	temp, err := mw.Temperature(city)
+	temp, err := mw.Temperature(ctx, city)
 
 	if err == nil {
 		t.Fatal("Temperature() returned nil error, want an error")
@@ -62,11 +78,81 @@ func TestWeatherKelvinReturnsErrorWhenProviderFails(t *testing.T) {
 func TestWeatherKelvinNoProvidersReturnsError(t *testing.T) {
 	city := "tokyo"
 
+	ctx := context.Background()
+
 	mw := MultiWeatherProvider{}
 
-	_, err := mw.Temperature(city)
+	_, err := mw.Temperature(ctx, city)
 
 	if err == nil {
 		t.Fatal("Temperature() returned nil error, want an error")
+	}
+}
+
+func TestTemperatureReturnsWhenContextIsCanceled(t *testing.T) {
+	release := make(chan struct{})
+	defer close(release)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	mw := MultiWeatherProvider{
+		blockingWeatherProvider{
+			release: release,
+		},
+	}
+
+	result := make(chan error, 1)
+
+	go func() {
+		_, err := mw.Temperature(ctx, "tokyo")
+		result <- err
+	}()
+
+	cancel()
+
+	select {
+	case err := <-result:
+		// O agregador retornou.
+		if !errors.Is(err, context.Canceled) {
+			t.Fatalf("error = %v, want %v", err, context.Canceled)
+		}
+
+	case <-time.After(time.Second):
+		// O agregador não retornou em tempo razoável.
+		t.Fatal("Temperature() did not return after context cancellation")
+	}
+}
+
+func TestTemperatureReturnsWhenContextDeadlineIsExceeded(t *testing.T) {
+	release := make(chan struct{})
+	defer close(release)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
+	defer cancel()
+
+	mw := MultiWeatherProvider{
+		blockingWeatherProvider{
+			release: release,
+		},
+	}
+
+	result := make(chan error, 1)
+
+	go func() {
+		_, err := mw.Temperature(ctx, "tokyo")
+		result <- err
+	}()
+
+	select {
+	case err := <-result:
+		// O agregador retornou.
+		if !errors.Is(err, context.DeadlineExceeded) {
+			t.Fatalf("error = %v, want %v", err, context.DeadlineExceeded)
+		}
+
+	case <-time.After(time.Second):
+		// O agregador não retornou em tempo razoável.
+		t.Fatal("Temperature() did not return after context deadline")
 	}
 }

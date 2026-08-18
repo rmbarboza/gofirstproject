@@ -1,26 +1,46 @@
 package weatherapps
 
 import (
+	"context"
 	"encoding/json"
 	"log"
 	"net/http"
 )
 
 type WeatherProvider interface {
-	Temperature(city string) (float64, error) // in Kelvin, naturally
+	Temperature(ctx context.Context, city string) (float64, error) // in Kelvin, naturally
 }
 
 type OpenWeatherMap struct {
-	APIKey string
+	APIKey  string
+	BaseURL string
 }
 
 type WeatherUnderground struct {
-	APIKey string
+	APIKey  string
+	BaseURL string
 }
 
+const (
+	openWeatherMapBaseURL     = "http://api.openweathermap.org"
+	weatherUndergroundBaseURL = "http://api.wunderground.com"
+)
+
 // Method for open weather map
-func (w OpenWeatherMap) Temperature(city string) (float64, error) {
-	resp, err := http.Get("http://api.openweathermap.org/data/2.5/weather?APPID=" + w.APIKey + "&q=" + city)
+func (w OpenWeatherMap) Temperature(ctx context.Context, city string) (float64, error) {
+	baseURL := w.BaseURL
+	if baseURL == "" {
+		baseURL = openWeatherMapBaseURL
+	}
+
+	url := baseURL + "/data/2.5/weather?APPID=" + w.APIKey + "&q=" + city
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+	if err != nil {
+		return 0, err
+	}
+
+	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
 		return 0, err
 	}
@@ -42,8 +62,20 @@ func (w OpenWeatherMap) Temperature(city string) (float64, error) {
 }
 
 // Method for weather underground
-func (w WeatherUnderground) Temperature(city string) (float64, error) {
-	resp, err := http.Get("http://api.wunderground.com/api/" + w.APIKey + "/conditions/q/" + city + ".json")
+func (w WeatherUnderground) Temperature(ctx context.Context, city string) (float64, error) {
+	baseURL := w.BaseURL
+	if baseURL == "" {
+		baseURL = weatherUndergroundBaseURL
+	}
+
+	url := baseURL + "/api/" + w.APIKey + "/conditions/q/" + city + ".json"
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+	if err != nil {
+		return 0, err
+	}
+
+	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
 		return 0, err
 	}
