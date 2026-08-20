@@ -13,7 +13,8 @@ type fakeWeatherProvider struct {
 }
 
 type blockingWeatherProvider struct {
-	release chan struct{}
+	release          chan struct{}
+	providerReturned chan struct{}
 }
 
 func (f fakeWeatherProvider) Temperature(_ context.Context, _ string) (float64, error) {
@@ -21,6 +22,8 @@ func (f fakeWeatherProvider) Temperature(_ context.Context, _ string) (float64, 
 }
 
 func (f blockingWeatherProvider) Temperature(_ context.Context, _ string) (float64, error) {
+	defer close(f.providerReturned)
+
 	<-f.release
 
 	return 0, nil
@@ -91,14 +94,15 @@ func TestWeatherKelvinNoProvidersReturnsError(t *testing.T) {
 
 func TestTemperatureReturnsWhenContextIsCanceled(t *testing.T) {
 	release := make(chan struct{})
-	defer close(release)
+	providerReturned := make(chan struct{})
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
 	mw := MultiWeatherProvider{
 		blockingWeatherProvider{
-			release: release,
+			release:          release,
+			providerReturned: providerReturned,
 		},
 	}
 
@@ -122,18 +126,29 @@ func TestTemperatureReturnsWhenContextIsCanceled(t *testing.T) {
 		// O agregador não retornou em tempo razoável.
 		t.Fatal("Temperature() did not return after context cancellation")
 	}
+
+	close(release)
+
+	select {
+	case <-providerReturned:
+		// Provider returned
+	case <-time.After(time.Second):
+		// The provider didn't return in time limit
+		t.Fatal("provider did not return after context cancellation")
+	}
 }
 
 func TestTemperatureReturnsWhenContextDeadlineIsExceeded(t *testing.T) {
 	release := make(chan struct{})
-	defer close(release)
+	providerReturned := make(chan struct{})
 
 	ctx, cancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
 	defer cancel()
 
 	mw := MultiWeatherProvider{
 		blockingWeatherProvider{
-			release: release,
+			release:          release,
+			providerReturned: providerReturned,
 		},
 	}
 
@@ -146,13 +161,23 @@ func TestTemperatureReturnsWhenContextDeadlineIsExceeded(t *testing.T) {
 
 	select {
 	case err := <-result:
-		// O agregador retornou.
+		// Aggregator returned
 		if !errors.Is(err, context.DeadlineExceeded) {
 			t.Fatalf("error = %v, want %v", err, context.DeadlineExceeded)
 		}
 
 	case <-time.After(time.Second):
-		// O agregador não retornou em tempo razoável.
+		// The aggregator didn't return in time limit
 		t.Fatal("Temperature() did not return after context deadline")
+	}
+
+	close(release)
+
+	select {
+	case <-providerReturned:
+		// Provider returned
+	case <-time.After(time.Second):
+		// The provider didn't return in time limit
+		t.Fatal("provider did not return after context deadline")
 	}
 }
