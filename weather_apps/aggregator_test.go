@@ -30,24 +30,57 @@ func (f blockingWeatherProvider) Temperature(_ context.Context, _ string) (float
 }
 
 func TestWeatherKelvinSuccess(t *testing.T) {
+	type testCase struct {
+		name      string
+		providers MultiWeatherProvider
+		want      float64
+	}
+
 	city := "tokyo"
-	want := 305.0
 
 	ctx := context.Background()
 
-	mw := MultiWeatherProvider{
-		fakeWeatherProvider{temperature: 300},
-		fakeWeatherProvider{temperature: 310},
+	tests := []testCase{
+		{
+			name: "one provider",
+			providers: MultiWeatherProvider{
+				fakeWeatherProvider{temperature: 300},
+			},
+			want: 300,
+		},
+		{
+			name: "two providers",
+			providers: MultiWeatherProvider{
+				fakeWeatherProvider{temperature: 300},
+				fakeWeatherProvider{temperature: 310},
+			},
+			want: 305,
+		},
+		{
+			name: "three providers",
+			providers: MultiWeatherProvider{
+				fakeWeatherProvider{temperature: 270},
+				fakeWeatherProvider{temperature: 280},
+				fakeWeatherProvider{temperature: 290},
+			},
+			want: 280,
+		},
 	}
 
-	temp, err := mw.Temperature(ctx, city)
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			mw := tc.providers
 
-	if err != nil {
-		t.Fatalf("Temperature() returned error: %v", err)
-	}
+			temp, err := mw.Temperature(ctx, city)
 
-	if temp != want {
-		t.Errorf("Temperature() = %.2f, want %.2f", temp, want)
+			if err != nil {
+				t.Fatalf("Temperature() returned error: %v", err)
+			}
+
+			if temp != tc.want {
+				t.Errorf("Temperature() = %.2f, want %.2f", temp, tc.want)
+			}
+		})
 	}
 }
 
