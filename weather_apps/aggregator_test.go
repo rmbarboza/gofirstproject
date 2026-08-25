@@ -85,29 +85,58 @@ func TestWeatherKelvinSuccess(t *testing.T) {
 }
 
 func TestWeatherKelvinReturnsErrorWhenProviderFails(t *testing.T) {
+	type testCase struct {
+		name      string
+		providers MultiWeatherProvider
+	}
+
 	city := "tokyo"
 	want := 0.0
 	expectedErr := errors.New("provider unavailable")
 
 	ctx := context.Background()
 
-	mw := MultiWeatherProvider{
-		fakeWeatherProvider{temperature: 300},
-		fakeWeatherProvider{err: expectedErr},
+	tests := []testCase{
+		{
+			name: "only provider fails",
+			providers: MultiWeatherProvider{
+				fakeWeatherProvider{err: expectedErr},
+			},
+		},
+		{
+			name: "failing provider listed first",
+			providers: MultiWeatherProvider{
+				fakeWeatherProvider{err: expectedErr},
+				fakeWeatherProvider{temperature: 300},
+			},
+		},
+		{
+			name: "failing provider listed last",
+			providers: MultiWeatherProvider{
+				fakeWeatherProvider{temperature: 300},
+				fakeWeatherProvider{err: expectedErr},
+			},
+		},
 	}
 
-	temp, err := mw.Temperature(ctx, city)
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			mw := tc.providers
 
-	if err == nil {
-		t.Fatal("Temperature() returned nil error, want an error")
-	}
+			temp, err := mw.Temperature(ctx, city)
 
-	if temp != want {
-		t.Errorf("Temperature() = %.2f, want %.2f", temp, want)
-	}
+			if err == nil {
+				t.Fatal("Temperature() returned nil error, want an error")
+			}
 
-	if !errors.Is(err, expectedErr) {
-		t.Errorf("Temperature() error = %v, want %v", err, expectedErr)
+			if temp != want {
+				t.Errorf("Temperature() = %.2f, want %.2f", temp, want)
+			}
+
+			if !errors.Is(err, expectedErr) {
+				t.Errorf("Temperature() error = %v, want %v", err, expectedErr)
+			}
+		})
 	}
 }
 
