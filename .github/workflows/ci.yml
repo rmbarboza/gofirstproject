@@ -1,0 +1,37 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v7
+
+      - name: Set up Go
+        uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+
+      - name: Go version
+        run: go version
+
+      - name: Check formatting
+        run: |
+          out="$(gofmt -l .)"
+          if [ -n "${out}" ]; then
+            echo "Formatting errors in the following files:"
+            printf '%s\n' "$out"
+            exit 1
+          fi
+
+      - name: Run tests
+        run: go test -count=1 ./...
+
+      - name: Run vet
+        run: go vet ./...
