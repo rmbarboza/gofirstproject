@@ -2,6 +2,7 @@ package main
 
 import (
 	"encoding/json"
+	"errors"
 	"log"
 	"net/http"
 	"os"
@@ -34,9 +35,11 @@ func main() {
 		weatherapps.WeatherUnderground{APIKey: "your-key-here"},
 	}
 
-	http.HandleFunc("/hello", hello)
+	mux := http.NewServeMux()
 
-	http.HandleFunc("/weather/", func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc("/hello", hello)
+
+	mux.HandleFunc("/weather/", func(w http.ResponseWriter, r *http.Request) {
 		begin := time.Now()
 		city := strings.SplitN(r.URL.Path, "/", 3)[2]
 
@@ -54,5 +57,14 @@ func main() {
 		})
 	})
 
-	http.ListenAndServe(":8080", nil)
+	server := http.Server{
+		Addr:    ":8080",
+		Handler: mux,
+	}
+
+	err = server.ListenAndServe()
+
+	if !errors.Is(err, http.ErrServerClosed) {
+		log.Fatal(err)
+	}
 }
