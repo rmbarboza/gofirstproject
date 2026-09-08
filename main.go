@@ -1,12 +1,15 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"log"
 	"net/http"
 	"os"
+	"os/signal"
 	"strings"
+	"syscall"
 	"time"
 
 	"github.com/joho/godotenv"
@@ -19,8 +22,10 @@ func hello(w http.ResponseWriter, r *http.Request) {
 }
 
 func main() {
-	err := godotenv.Load()
-	if err != nil {
+	log.SetFlags(log.LstdFlags | log.Lmicroseconds)
+
+	enverr := godotenv.Load()
+	if enverr != nil {
 		log.Println("No .env file found, reading from system env")
 	}
 
@@ -57,14 +62,35 @@ func main() {
 		})
 	})
 
+	signalCtx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+
 	server := http.Server{
 		Addr:    ":8080",
 		Handler: mux,
 	}
 
-	err = server.ListenAndServe()
+	serverErr := make(chan error, 1)
 
-	if !errors.Is(err, http.ErrServerClosed) {
-		log.Fatal(err)
+	go func() {
+		serverErr <- server.ListenAndServe()
+	}()
+
+	select {
+	case err := <-serverErr:
+		if !errors.Is(err, http.ErrServerClosed) {
+			log.Fatal("server returned:", err)
+		}
+	case <-signalCtx.Done():
+		log.Println("shutdown requested")
+		shutdownCtx, cancel := context.WithTimeout(
+			context.Background(),
+			5*time.Second,
+		)
+		defer cancel()
+
+		begin := time.Now()
+		err := server.Shutdown(shutdownCtx)
+		log.Printf("Shutdown levou %v; erro: %v\n", time.Since(begin), err)
 	}
 }
